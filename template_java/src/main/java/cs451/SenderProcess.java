@@ -89,7 +89,9 @@ public class SenderProcess {
                             int currentWindowSize = process.lockCounter.getWindowValue();
                             process.lockCounter.setNewWindowSize(Math.max(1, currentWindowSize / 2));
                             process.lockCounter.setCounter(currentWindowSize - unAckedPackets.get()); 
+                            synchronized (this) {
                             wait(WAIT_TIME_RESEND_ACK);
+                            }
                             process.resendSignal.signalResender();
                             process.lockCounter.waitForNonZero(); 
                         }
@@ -211,11 +213,14 @@ public class SenderProcess {
         public Logger(SenderProcess process) {
             this.process = process;
         }
+
         @Override
         public void run() {
             while (!process.stop) {
                 try {
                     Thread.sleep(FLUSH_INTERVAL); // Sleep for the specified interval
+                    // FinalLogger.writeLogs(process.outputFilePath, process.logs);
+                    // process.logs.clear();
                     flushLogs();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -225,9 +230,11 @@ public class SenderProcess {
             }
             flushLogs();
         }
+       
     }
     public void flushLogs() { 
-        FinalLogger.writeLogs(outputFilePath, logs);
-        logs.clear();
+        FinalLogger.writeLogs(this.outputFilePath, this.logs);
+        this.logs.clear();
     }
+  
 }

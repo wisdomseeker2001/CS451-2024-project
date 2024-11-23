@@ -134,7 +134,9 @@ public class ReceiverProcess {
             while (!process.stop) {
                 try {
                     Thread.sleep(FLUSH_INTERVAL); // Sleep for the specified interval
-                    flushLogs();
+                    FinalLogger.writeLogs(process.outputFilePath, process.logs);
+                    process.logs.clear();
+                    // flushLogs();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                     Thread.currentThread().interrupt(); // Restore the interrupted status

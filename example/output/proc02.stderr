@@ -1,4 +1,0 @@
-Exception in thread "Thread-0" java.lang.NullPointerException: Cannot invoke "cs451.SenderProcess.stop()" because "cs451.Main.senderProcess" is null
-	at cs451.Main.handleSignal(Main.java:29)
-	at cs451.Main$1.run(Main.java:42)
-java.net.SocketException: Socket closed

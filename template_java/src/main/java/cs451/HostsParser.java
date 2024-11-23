@@ -43,7 +43,8 @@ public class HostsParser {
                 hosts.add(newHost);
             }
         } catch (IOException e) {
-            System.err.println("Problem with the hosts file!");
+            System.err.println(e.getMessage());
+            System.err.println("the hosts file probelm!");
             return false;
         }
 

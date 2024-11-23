@@ -11,7 +11,7 @@ public class Host {
     private String ip;
     private int port = -1;
 
-    public boolean populate(String idString, String ipString, String portString) {
+    public boolean populate(String idString, String ipString, String portString) { //todo?
         try {
             id = Integer.parseInt(idString);
 

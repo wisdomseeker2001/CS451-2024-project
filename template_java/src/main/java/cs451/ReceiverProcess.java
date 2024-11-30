@@ -13,7 +13,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class ReceiverProcess {
 
     private final String outputFilePath;
-
     Host myHost;
     public int myID;
 
@@ -50,7 +49,7 @@ public class ReceiverProcess {
     public void receiverBroadcast() {
         new Thread(new Receiver(this)).start();
         new Thread(new AckSender(this)).start();
-        new Thread(new Logger(this)).start();
+        new Thread(new MyLogger(this)).start();
     }
 
     private class Receiver implements Runnable {
@@ -78,6 +77,9 @@ public class ReceiverProcess {
 
                     int packetID = receivedPacket.getPacketID();
                     int senderID = receivedPacket.getSenderID();
+
+                    Main.print("Process " + myID + " Received packet with ID " + packetID + " from process " + senderID);
+
                     Host senderHost = process.listOfHosts.get(senderID - 1); //
                     process.ackQueue.put(new PacketIDHostTuple(packetID, senderHost));
 
@@ -85,6 +87,7 @@ public class ReceiverProcess {
                         synchronized (lockGeneral) {
                             receivedPackets.add(new PacketIDHostTuple(packetID, senderHost));
                             List<Message> messages = receivedPacket.getMessages();
+                            Main.print("Process " + myID + " logging packet with ID " + packetID + " from " + senderID + " of size" + messages.size() + "\n");
                             for (int i = 0; i < messages.size(); i++) {
                                 int messageID = packetID + i;
                                 logs.add("d" + " " + senderID + " " + messageID);
@@ -116,6 +119,7 @@ public class ReceiverProcess {
                     InetAddress address = InetAddress.getByName(senderHost.getIp());
                     DatagramPacket ackPacket = new DatagramPacket(ackBuffer, ackBuffer.length, address, senderHost.getPort());
                     process.mySocket.send(ackPacket);
+                    Main.print("Process " + myID + " Sent ack for packet with ID: " + ackTuple.packetID + " to " + senderHost.getId() + "\n");
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -123,10 +127,10 @@ public class ReceiverProcess {
         }
     }
 
-    private class Logger implements Runnable {
+    private class MyLogger implements Runnable {
         private ReceiverProcess process;
 
-        public Logger(ReceiverProcess process) {
+        public MyLogger(ReceiverProcess process) {
             this.process = process;
         }
         @Override

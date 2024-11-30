@@ -1,0 +1,11 @@
+Process 2 Created packet with ID: 1of size: 8
+Sent packet with ID: 1 of size: 8
+
+Process 2 Received ack for packet with ID 1
+
+resender woken up
+Process 2 Created packet with ID: 9of size: 2
+Sent packet with ID: 9 of size: 2
+
+Process 2 Received ack for packet with ID 9
+

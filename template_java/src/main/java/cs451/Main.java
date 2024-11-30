@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.List;
+import java.util.logging.Logger;
 
 public class Main {
     private static int myID;
@@ -14,25 +15,30 @@ public class Main {
     private static DatagramSocket mySocket;
     private static ReceiverProcess receiverProcess;
     private static SenderProcess senderProcess;
+    private static final Logger logger = Logger.getLogger(Main.class.getName());
 
     private static void handleSignal() {
         // immediately stop network packet processing
-        System.out.println("Immediately stopping network packet processing.");
+         print("Immediately stopping network packet processing.");
         if (mySocket != null && !mySocket.isClosed()) {
             mySocket.close();
         }
-        /// ?? correct to only stop my process?
         if (IAmreceiver) {
+            if (receiverProcess != null) {
             receiverProcess.stop();
             receiverProcess.flushLogs(); // Flush logs immediately
+            }
         } else {
+            if (senderProcess != null) {
             senderProcess.stop();
             senderProcess.flushLogs(); // Flush logs immediately
+            }
 
         }
-        // write/flush output file if necessary
-        System.out.println("Writing output.");
-        // Call Method to write output file
+    }
+
+    public static void print(String message) {
+        System.out.println(message);
     }
 
     private static void initSignalHandlers() {
@@ -62,7 +68,8 @@ public class Main {
     }
 
     private static DatagramSocket createDatagramSocket(String IP, int port) {
-    System.out.println("Creating Datagram Socket");
+        logger.info("Creating Datagram Socket");
+
         try {
             InetAddress address = InetAddress.getByName(IP);
             DatagramSocket socket = new DatagramSocket(null);
@@ -99,7 +106,8 @@ public class Main {
         String myIP = myHost.getIp();
 
         mySocket = createDatagramSocket(myIP, myPort);
-        System.out.println("Created Datagram Socket");
+        logger.info("Created Datagram Socket");
+        // System.out.println("Created Datagram Socket");
 
         if (IAmreceiver) {
             receiverProcess = new ReceiverProcess(outputFilePath, myID, mySocket,

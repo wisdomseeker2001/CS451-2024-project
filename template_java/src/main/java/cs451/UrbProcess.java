@@ -9,6 +9,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -30,10 +33,15 @@ public class UrbProcess {
     public int numberOfMessages;
     private int MAX_MESS_PER_PACK = 8; // Maximum number of messages per packet
     private int totalPackets;
+    private int numberOfHosts;
+    private int majority;
 
     private Set<Sender_Packet_Size_Tuple> pending = ConcurrentHashMap.newKeySet();;
-    private Set<Integer>[] acked_PerPacketPerSender;
     private Set<Sender_Packet_Size_Tuple> urbDelivered = new HashSet<>();
+
+    private Map<Integer, Map<Integer, Set<Integer>>> acked_perSender;
+    private HashMap<Integer, PriorityQueue<Sender_Packet_Size_Tuple>> received_packets_toLog = new HashMap<>();
+    private HashMap<Integer, Integer> highestLoggedID = new HashMap<>();
 
     private DatagramSocket mySocket;
     private AtomicInteger unAckedPackets = new AtomicInteger(0);
@@ -48,23 +56,35 @@ public class UrbProcess {
     private final LockCounter lockCounter = new LockCounter();
     private final ResendSignal resendSignal = new ResendSignal();
 
-    @SuppressWarnings("unchecked")
     public UrbProcess(String outputFilePath, int myId, DatagramSocket mySocket, int numberOfMessages,
             List<Host> listOfHosts, Host myHost) {
         this.outputFilePath = outputFilePath;
         this.myID = myId;
         this.numberOfMessages = numberOfMessages;
         this.listOfHosts = listOfHosts;
+        this.numberOfHosts = listOfHosts.size();
+        this.majority = (numberOfHosts / 2) + 1;
         this.myHost = myHost;
         this.mySocket = mySocket;
         this.totalPackets = (numberOfMessages % MAX_MESS_PER_PACK == 0)
                 ? numberOfMessages / MAX_MESS_PER_PACK
                 : (numberOfMessages / MAX_MESS_PER_PACK) + 1;
-        int numberofPacketsInSystem = listOfHosts.size() * totalPackets;
-        acked_PerPacketPerSender = (Set<Integer>[]) new HashSet[numberofPacketsInSystem];
-        for (int i = 0; i < numberofPacketsInSystem; i++) {
-            acked_PerPacketPerSender[i] = new HashSet<>();
+
+        for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
+            Map<Integer, Set<Integer>> packetMap = new HashMap<>();
+            for (int packetID = 1; packetID <= totalPackets; packetID++) {
+                packetMap.put(packetID, new HashSet<>());
+            }
+            acked_perSender.put(hostID, packetMap);
         }
+        for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
+            PriorityQueue<Sender_Packet_Size_Tuple> queue = new PriorityQueue<>(new PacketComparator());
+            received_packets_toLog.put(hostID, queue);
+        }
+        for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
+            highestLoggedID.put(hostID, 0);
+        }
+
     }
 
     // TODO change MAIN
@@ -140,7 +160,7 @@ public class UrbProcess {
                     // process)
                     int numberPacketsToSend = process.lockCounter.getCounterValue();
 
-                    for (int receiverID = 1; receiverID <= process.listOfHosts.size(); receiverID++) {
+                    for (int receiverID = 1; receiverID <= process.numberOfHosts; receiverID++) {
 
                         int numberPacketsPerProcess = numberPacketsToSend;
                         int remainingMessagesPerProcess = remainingMessages;
@@ -154,7 +174,7 @@ public class UrbProcess {
                         // Emulate as if you received packet from youself
                         if (receiverID == myID) {
                             for (int pckID = 1; pckID <= numberPacketsPerProcess; pckID++) {
-                                acked_PerPacketPerSender[((myID - 1) * totalPackets) + pckID].add(myID);
+                                acked_perSender.get(myID).get(pckID).add(myID);
                             }
                             continue;
                         }
@@ -212,17 +232,18 @@ public class UrbProcess {
             this.process = process;
         }
 
-        @Override //TODO decrement unacked packets when receive packets , impleement FIFO pritotisatin....
+        @Override // TODO decrement unacked packets when receive packets , impleement FIFO
+                  // pritotisatin....
         public void run() {
             try {
 
-                // continously receive packets 
-                // find out who the sender is 
+                // continously receive packets
+                // find out who the sender is
                 // check if the message has already been logged
                 // add packet to receivedPackets
                 // log if havent been logged
 
-                byte[] buffer = new byte[BUFFER_SIZE]; 
+                byte[] buffer = new byte[BUFFER_SIZE];
                 while (!process.stop) {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     process.mySocket.receive(packet);
@@ -231,102 +252,110 @@ public class UrbProcess {
 
                     for (TimeStampedPacket receivedPacket : receivedPackets) {
 
-                    unAckedPackets.decrementAndGet();
-                    process.lockCounter.increment(receivedPackets.size());
+                        unAckedPackets.decrementAndGet();
+                        process.lockCounter.increment(receivedPackets.size());
 
-                    int packetID = receivedPacket.getPacketID();
-                    int senderID = receivedPacket.getSenderID();
-                    int forwarderID = receivedPacket.getForwarderID();
-                    int packetSize = receivedPacket.getMessages().size();
+                        int packetID = receivedPacket.getPacketID();
+                        int senderID = receivedPacket.getSenderID();
+                        int forwarderID = receivedPacket.getForwarderID();
+                        int packetSize = receivedPacket.getMessages().size();
 
-                    Main.print("Process " + myID + " Received packet with ID " + packetID + " forwarded by process " + forwarderID + " sent by process " + senderID);
+                        Main.print("Process " + myID + " Received packet with ID " + packetID + " forwarded by process "
+                                + forwarderID + " sent by process " + senderID);
 
-                    //ADD to acked -> CHECK if can URB DELIVER
-                    int entry = ((senderID-1) * totalPackets)+ packetID;
-                    acked_PerPacketPerSender[entry].add(forwarderID);
-                    
-                    if (!urbDelivered.contains(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize))) {
-                        if (acked_PerPacketPerSender[entry].size() > (listOfHosts.size() / 2)) {
-                            urbDelivered.add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
-                            pending.remove(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
-                            for (int i = 1; i <= packetSize; i++) {
-                            logs.add("d" + " " + senderID + " " + (((packetID - 1) * MAX_MESS_PER_PACK) + i));
+                        // ADD to acked -> CHECK if can URB DELIVER
+                        // TODO use urbDelovered for what, to avoid doing what twice?
+
+                        acked_perSender.get(senderID).get(packetID).add(forwarderID);
+                        if (!urbDelivered.contains(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize))) {
+                            if (acked_perSender.get(senderID).get(packetID).size() > (majority)) {// URB DELIVER
+                                urbDelivered.add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
+                                pending.remove(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
+                                received_packets_toLog.get(senderID)
+                                        .add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize)); // TODO
+                                                                                                            // defin
+                                                                                                            // priority
+                                                                                                            // in queue
+                            }
+                        }
+
+                        // TODO ADD to pendinf and boracst atomic?
+                        // ADD TO forwarder to PENDING UPON RECEIVING PACKET
+
+                        // TODO window size must be modified for all packets sent & received
+                        // TODO FIFO mechanism: prioritise which we should send back first
+
+                        // TODO FIFO SYSTEM - when rebroacstsing ... for each packet, must pritotirse
+                        // differnet, how to deinf how mnay to resend?
+
+                        if (!pendingContains(senderID, packetID, packetSize)) {
+                            addToPending(senderID, packetID, packetSize);
+
+                            // tirgger beb broadcast
+                            for (int receiverID = 1; receiverID <= process.listOfHosts.size(); receiverID++) {
+
+                                if (receiverID == myID) {
+                                    continue;
+                                } // Skip self TODO (what to do when sending to SELF - add to ?)
+
+                                Host receiverHost = listOfHosts.get(receiverID - 1);
+                                String receiverIP = receiverHost.getIp();
+                                int receiverPort = receiverHost.getPort();
+
+                                TimeStampedPacket timeStampedPacket = new TimeStampedPacket(packetID, myID, senderID,
+                                        receivedPacket.getMessages());
+                                byte[] bufferb = timeStampedPacket.toString().getBytes();
+                                InetAddress address = InetAddress.getByName(receiverIP);
+                                DatagramPacket packetb = new DatagramPacket(bufferb, buffer.length, address,
+                                        receiverPort);
+                                process.mySocket.send(packetb);
+
                             }
                         }
                     }
 
-                    //TODO ADD to pendinf and boracst atomic? 
-                    //ADD TO forwarder to PENDING UPON RECEIVING PACKET 
+                }
+            } catch (
 
-                    //TODO window size must be modified for all packets sent & received 
-                    //TODO FIFO mechanism: prioritise which we should send back first
+            Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
-                    //TODO FIFO SYSTEM - when rebroacstsing ... for each packet, must pritotirse differnet, how to deinf how mnay to resend?
+    // TODO do i need to have a mechnaism to immeditely flush the logs when SIG
+    // arrives or can I wait FLUSH_INTERVAL?
+    // TODO do i have to also terminate this thread?
+    // TODO need to make sur logs are flushed before sending hence this way may not
+    // be correct
 
+    // for (int i = 1; i <= packetSize; i++) {
+    //     logs.add("d" + " " + senderID + " " + (((packetID - 1) * MAX_MESS_PER_PACK) + i));
+    //     }
 
-                    if (!pendingContains(senderID, packetID, packetSize)) {
-                        addToPending(senderID, packetID, packetSize);
-                    
-                        //tirgger beb broadcast 
-                        for (int receiverID = 1; receiverID <= process.listOfHosts.size(); receiverID++) {
+    private class Logger implements Runnable {
+        private UrbProcess process;
 
-                            if (receiverID == myID) { 
-                                continue; } // Skip self TODO (what to do when sending to SELF - add to ?) 
-   
-                            Host receiverHost = listOfHosts.get(receiverID - 1);
-                            String receiverIP = receiverHost.getIp();
-                            int receiverPort = receiverHost.getPort();
+        public Logger(UrbProcess process) {
+            this.process = process;
+        }
 
-                            TimeStampedPacket timeStampedPacket = new TimeStampedPacket(packetID, myID, senderID, receivedPacket.getMessages());
-                                byte[] bufferb = timeStampedPacket.toString().getBytes();
-                                InetAddress address = InetAddress.getByName(receiverIP);
-                                DatagramPacket packetb = new DatagramPacket(bufferb, buffer.length, address, receiverPort);
-                                process.mySocket.send(packetb);
-    
-                                }  
-                      } 
-                    }
-                      
+        @Override
+        public void run() {
+            while (!process.stop) {
+                try {
+                    Thread.sleep(FLUSH_INTERVAL); // Sleep for the specified interval
+                    // FinalLogger.writeLogs(process.outputFilePath, process.logs);
+                    // process.logs.clear();
+                    flushLogs();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    Thread.currentThread().interrupt(); // Restore the interrupted status
+                    break; // Exit the loop if the thread is interrupted
                 }
             }
-            }catch(
-
-        Exception e)
-        {
-            e.printStackTrace();
+            flushLogs();
         }
-    }
-}
-
-// TODO do i need to have a mechnaism to immeditely flush the logs when SIG
-// arrives or can I wait FLUSH_INTERVAL?
-// TODO do i have to also terminate this thread?
-// TODO need to make sur logs are flushed before sending hence this way may not
-// be correct
-
-private class Logger implements Runnable {
-    private UrbProcess process;
-
-    public Logger(UrbProcess process) {
-        this.process = process;
-    }
-
-    @Override
-    public void run() {
-        while (!process.stop) {
-            try {
-                Thread.sleep(FLUSH_INTERVAL); // Sleep for the specified interval
-                // FinalLogger.writeLogs(process.outputFilePath, process.logs);
-                // process.logs.clear();
-                flushLogs();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                Thread.currentThread().interrupt(); // Restore the interrupted status
-                break; // Exit the loop if the thread is interrupted
-            }
-        }
-        flushLogs();
-    }
 
     }
 

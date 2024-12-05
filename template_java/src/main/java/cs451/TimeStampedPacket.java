@@ -61,7 +61,8 @@ public class TimeStampedPacket {
         return sb.toString();
     }
 
-    public String parsePackets(List<TimeStampedPacket> listOfPackets) {
+    //packet1-packet2-packet3 e.g. 1:1:2:2:1,2,3,4- 
+    public static String parsePackets(List<TimeStampedPacket> listOfPackets) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < listOfPackets.size(); i++) {
             sb.append(listOfPackets.get(i).toString());
@@ -93,6 +94,15 @@ public class TimeStampedPacket {
         TimeStampedPacket packet = new TimeStampedPacket(packetID, forwarderID, senderID, messages);
         packet.setTimestamp(timestamp);
         return packet;
+    }
+
+    public static List<TimeStampedPacket> unparsePackets(String packetsString) {
+        String[] packetStrings = packetsString.split("-");
+        List<TimeStampedPacket> packets = new ArrayList<>();
+        for (String packetString : packetStrings) {
+            packets.add(TimeStampedPacket.fromString(packetString));
+        }
+        return packets;
     }
 
     // public static List<Message> extractMessages(String packetString) {

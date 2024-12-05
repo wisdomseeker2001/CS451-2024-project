@@ -10,5 +10,15 @@ public class Sender_Packet_Size_Tuple {
         this.PacketID = packetID;
         this.PacketSize = packetSize;
     }
+
+    public int getPacketID() {
+        return PacketID;
+    }
+    public int getPacketSize() {
+        return PacketSize;
+    }
+    public int getSenderID() {
+        return HostID;
+    }
     
 }

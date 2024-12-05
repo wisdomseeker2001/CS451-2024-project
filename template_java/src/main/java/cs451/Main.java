@@ -93,54 +93,28 @@ public class Main {
         String outputFilePath = parser.output();
 
         myID = parser.myId();
-    
-        receiverID = retrieve(configFilePath, 1);
 
-        IAmreceiver = (myID == receiverID);
-
-        int numberofMessages = retrieve(configFilePath, 0);
+        // IAmreceiver = (myID == receiverID); no longer needed 
 
         List<Host> listOfHosts = parser.hosts();
         Host myHost = listOfHosts.get(myID - 1);
         int myPort = myHost.getPort();
         String myIP = myHost.getIp();
 
+        int numberofMessages = retrieve(configFilePath, 0);
+
         mySocket = createDatagramSocket(myIP, myPort);
         logger.info("Created Datagram Socket");
         // System.out.println("Created Datagram Socket");
 
-        if (IAmreceiver) {
-            receiverProcess = new ReceiverProcess(outputFilePath, myID, mySocket,
-                    numberofMessages, listOfHosts, myHost);
-            receiverProcess.receiverBroadcast();
-        } else {
-            SenderProcess senderProcess = new SenderProcess(outputFilePath, myID, mySocket,
-                    receiverID, numberofMessages, listOfHosts, myHost);
-            senderProcess.senderBroadcast();
-        }
+     
+            UrbProcess urbProcess = new UrbProcess(outputFilePath, myID, mySocket, numberofMessages, listOfHosts, myHost);
+
+                    urbProcess.urbBroadcast();
+       
         while (true) {
             // Sleep for 1 hour
             Thread.sleep(60 * 60 * 1000);
         }
     }
 }
-
-// System.out.println("From a new terminal type `kill -SIGINT " + pid + "` or
-// `kill -SIGTERM " + pid + "` to stop processing packets\n");
-
-// System.out.println("List of resolved hosts is:");
-// System.out.println("==========================");
-
-// for (Host host: parser.hosts()) {
-// System.out.println(host.getId());
-// System.out.println("Human-readable IP: " + host.getIp());
-// System.out.println("Human-readable Port: " + host.getPort());
-// System.out.println();
-// }
-
-// System.out.println("Doing some initialization\n");
-
-// System.out.println("Broadcasting and delivering messages...\n");
-
-// After a process finishes broadcasting,
-// it waits forever for the delivery of messages.

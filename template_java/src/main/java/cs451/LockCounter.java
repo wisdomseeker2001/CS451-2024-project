@@ -37,10 +37,10 @@ public class LockCounter {
         }
     }
     
-    public void decrementCounter() {
+    public void decrementCounter(int value) {
         lock();
         try {
-            counter -= 1;
+            counter -= value;
         } finally {
             unlock();
         }

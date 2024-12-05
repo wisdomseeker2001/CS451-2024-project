@@ -5,12 +5,14 @@ import java.util.List;
 
 public class TimeStampedPacket {
     private int packetID;
+    private int forwarderID;
     private int senderID;
     private List<Message> messages;
     private long timestamp;
 
-    public TimeStampedPacket(int packetID, int senderID, List<Message> messages) {
+    public TimeStampedPacket(int packetID, int forwarderID, int senderID, List<Message> messages) {
         this.packetID = packetID;
+        this.forwarderID = forwarderID;
         this.senderID = senderID;
         this.messages = messages;
 
@@ -18,6 +20,10 @@ public class TimeStampedPacket {
 
     public int getPacketID() {
         return packetID;
+    }
+
+    public int getForwarderID() {
+        return forwarderID;
     }
     
     public int getSenderID() {
@@ -36,17 +42,31 @@ public class TimeStampedPacket {
         this.timestamp = timestamp;
     }
 
+
+
     @Override
-    ///format: packetID:senderID:timestamp:message1,message2...
+    ///format: packetID:forwaderID:senderID:timestamp:message1,message2...
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append(packetID).append(":")
+        .append(forwarderID).append(":")
         .append(senderID).append(":")
         .append(timestamp).append(":");
         for (int i = 0; i < messages.size(); i++) {
             sb.append(messages.get(i).toString());
             if (i < messages.size() - 1) {
                 sb.append(",");
+            }
+        }
+        return sb.toString();
+    }
+
+    public String parsePackets(List<TimeStampedPacket> listOfPackets) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < listOfPackets.size(); i++) {
+            sb.append(listOfPackets.get(i).toString());
+            if(i < listOfPackets.size() - 1) {
+            sb.append("-");
             }
         }
         return sb.toString();
@@ -59,8 +79,9 @@ public class TimeStampedPacket {
         }
     
         int packetID = Integer.parseInt(parts[0]);
-        int senderID = Integer.parseInt(parts[1]);
-        long timestamp = Long.parseLong(parts[2]);
+        int forwarderID = Integer.parseInt(parts[1]);
+        int senderID = Integer.parseInt(parts[2]);
+        long timestamp = Long.parseLong(parts[3]);
         List<Message> messages = new ArrayList<>();
     
         String messagesPart = parts[3];
@@ -69,7 +90,7 @@ public class TimeStampedPacket {
             messages.add(Message.fromString(messageString));
         }
     
-        TimeStampedPacket packet = new TimeStampedPacket(packetID, senderID, messages);
+        TimeStampedPacket packet = new TimeStampedPacket(packetID, forwarderID, senderID, messages);
         packet.setTimestamp(timestamp);
         return packet;
     }

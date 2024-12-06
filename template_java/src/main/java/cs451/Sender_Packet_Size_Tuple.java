@@ -1,24 +1,24 @@
 package cs451;
 
 public class Sender_Packet_Size_Tuple {
-    public final int HostID;
-    public final int PacketID;
-    public final int PacketSize;
+    public final int senderID;
+    public final int packetID;
+    public final int packetSize;
 
     public Sender_Packet_Size_Tuple(int senderID, int packetID, int packetSize) {
-        this.HostID = senderID;
-        this.PacketID = packetID;
-        this.PacketSize = packetSize;
+        this.senderID = senderID;
+        this.packetID = packetID;
+        this.packetSize = packetSize;
     }
 
     public int getPacketID() {
-        return PacketID;
+        return packetID;
     }
     public int getPacketSize() {
-        return PacketSize;
+        return packetSize;
     }
     public int getSenderID() {
-        return HostID;
+        return senderID;
     }
     
 }

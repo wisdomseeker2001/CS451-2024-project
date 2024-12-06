@@ -8,7 +8,7 @@ public class TimeStampedPacket {
     private int forwarderID;
     private int senderID;
     private List<Message> messages;
-    private long timestamp;
+    private int timestamp;
 
     public TimeStampedPacket(int packetID, int forwarderID, int senderID, List<Message> messages) {
         this.packetID = packetID;

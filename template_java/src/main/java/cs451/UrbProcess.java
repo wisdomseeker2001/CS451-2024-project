@@ -14,7 +14,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
-import cs451.PacketComparator;
 
 public class UrbProcess {
 
@@ -24,32 +23,30 @@ public class UrbProcess {
     private final Object lockGeneral = new Object();
 
     public int myID;
-    Host myHost;
     List<Host> listOfHosts;
     volatile boolean stop = false;
 
     public int numberOfMessages;
-    private int MAX_MESS_PER_PACK = 8; // Maximum number of messages per packet
-    private int totalPackets;
-    private int numberOfHosts;
-    private int majority;
+    final private int MAX_MESS_PER_PACK = 8;
+    final private int totalPackets;
+    final private int numberOfHosts;
+    final private int majority;
 
-    private Set<Sender_Packet_Size_Tuple> pending = ConcurrentHashMap.newKeySet();;
-    private Set<Sender_Packet_Size_Tuple> urbDelivered = new HashSet<>();
+    private final Set<TimeStampedPacket> pending = ConcurrentHashMap.newKeySet();;
+    private final Set<Sender_Packet_Size_Tuple> urbDelivered = new HashSet<>();
 
     private Map<Integer, Map<Integer, Set<Integer>>> acked_perSender;
-    private HashMap<Integer, PriorityQueue<Sender_Packet_Size_Tuple>> received_packets_toLog = new HashMap<>(); ///TODO
-    private HashMap<Integer, Integer> highestLoggedID = new HashMap<>();
+    private final HashMap<Integer, PriorityQueue<Sender_Packet_Size_Tuple>> received_packets_toLog = new HashMap<>(); ///TODO
+    private final HashMap<Integer, Integer> highestLoggedID = new HashMap<>();
 
-    private DatagramSocket mySocket;
-    private AtomicInteger unAckedPackets = new AtomicInteger(0);
+    private final DatagramSocket mySocket;
+    private final AtomicInteger unAckedPackets = new AtomicInteger(0);
     public ConcurrentLinkedQueue<String> logs = new ConcurrentLinkedQueue<>();
 
-    // TODO understand what these values should be, wait time can be function of
-    // window Size/ unacked Size ?
-    private final long FLUSH_INTERVAL = 1000;
-    private final int BUFFER_SIZE = 4096;
+    private final long FLUSH_INTERVAL = 1000; //TODO what should these be?
+    private final int BUFFER_SIZE = 4096; 
 
+    private final AtomicInteger logicClock = new AtomicInteger(1);
     private final LockCounter lockCounter = new LockCounter();
     private final ResendSignal resendSignal = new ResendSignal();
 
@@ -61,12 +58,10 @@ public class UrbProcess {
         this.listOfHosts = listOfHosts;
         this.numberOfHosts = listOfHosts.size();
         this.majority = (numberOfHosts / 2) + 1;
-        this.myHost = myHost;
         this.mySocket = mySocket;
         this.totalPackets = (numberOfMessages % MAX_MESS_PER_PACK == 0)
                 ? numberOfMessages / MAX_MESS_PER_PACK
                 : (numberOfMessages / MAX_MESS_PER_PACK) + 1;
-
         for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
             Map<Integer, Set<Integer>> packetMap = new HashMap<>();
             for (int packetID = 1; packetID <= totalPackets; packetID++) {
@@ -75,7 +70,7 @@ public class UrbProcess {
             acked_perSender.put(hostID, packetMap);
         }
         for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
-            PriorityQueue<Sender_Packet_Size_Tuple> queue = new PriorityQueue<>(new PacketComparator());
+            PriorityQueue<Sender_Packet_Size_Tuple> queue = new PriorityQueue<>(new LogComparator());
             received_packets_toLog.put(hostID, queue);
         }
         for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
@@ -83,23 +78,21 @@ public class UrbProcess {
         }
     }
 
-    // TODO change MAIN
     public void stop() {
         stop = true;
     }
 
-    public void addToPending(int senderID, int packetID, int packetSize) {
-        Sender_Packet_Size_Tuple tuple = new Sender_Packet_Size_Tuple(senderID, packetID, packetSize);
+    public void addToPending(TimeStampedPacket packet) {
         synchronized (pending) {
-            if (!pending.contains(tuple)) {
-                pending.add(tuple);
+            if (!pending.contains(packet)) {
+                pending.add(packet);
             }
         }
     }
 
-    public boolean pendingContains(int senderID, int packetID, int packetSize) {
+    public boolean pendingContains(TimeStampedPacket packet) {
         synchronized (pending) {
-            return pending.contains(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
+            return pending.contains(packet);
         }
     }
 
@@ -110,7 +103,7 @@ public class UrbProcess {
     }
 
     private class UrbBroadcast implements Runnable {
-        private UrbProcess process;
+        private final UrbProcess process;
 
         public UrbBroadcast(UrbProcess process) {
             this.process = process;
@@ -144,13 +137,11 @@ public class UrbProcess {
                     }
                     // 1: Iterate over all processes (except self)
                     // 2: Send to each, number of packets allowed by current window size
-                    // Add (self, packetID) to pending at each interation (of last process only so
-                    // no duplicates)
+                    // Add (self, packetID) to pending at each interation (of last process only so no duplicates
 
                     // loop to send all the packets allowed by windowsize to a single process
                     // TODO CHANGE ... must parse the packets
-                    // TODO need to log before you actually send..... (but log only once u send
-                    // packet to all processes?)
+                    // TODO need to log before you actually send... (but log only once u send packet to all processes?)
 
                     // need to send same amount to all processed (cant recheck after sent to each
                     // process)
@@ -159,6 +150,7 @@ public class UrbProcess {
                     for (int receiverID = 1; receiverID <= process.numberOfHosts; receiverID++) {
 
                         int numberPacketsPerProcess = numberPacketsToSend;
+                        int clockValue = process.logicClock.getAndIncrement();
                         int remainingMessagesPerProcess = remainingMessages;
                         int PacketIDPerProcess = packetID;
                         int firstMessageIDPerProcess = firstMessageID;
@@ -182,13 +174,14 @@ public class UrbProcess {
                             for (int x = 0; x < messagesToSend; x++) {
                                 messages.add(new Message(firstMessageIDPerProcess + x));
                             }
-                            listOfPackets.add(new TimeStampedPacket(PacketIDPerProcess, myID, myID, messages));
 
-                            // if sending to the last process: add to pending, add to logs, change GLOBAL
-                            // variables
+                            TimeStampedPacket currentPacket = new TimeStampedPacket(clockValue, PacketIDPerProcess, myID, myID, messages);
+                 
+                            listOfPackets.add(currentPacket);
+                            // if sending to the last process: add to pending, add to logs, change GLOBAL variables
                             if (receiverID == process.listOfHosts.size()) {
                                 synchronized (pending) {
-                                    pending.add(new Sender_Packet_Size_Tuple(myID, PacketIDPerProcess, messagesToSend));
+                                    pending.add(currentPacket);
                                 }
                                 for (int messSeq = 0; messSeq < messagesToSend; messSeq++) {
                                     int messageID = firstMessageIDPerProcess + messSeq;
@@ -221,8 +214,16 @@ public class UrbProcess {
         }
     }
 
+
+      // TODO use urbDelovered for what, to avoid doing what twice?
+                        // TODO ADD to pendinf and boracst atomic?
+                        // ADD TO forwarder to PENDING UPON RECEIVING PACKET
+                        // TODO window size must be modified for all packets sent & received
+                        // TODO FIFO mechanism: prioritise which we should send back first
+                        // TODO FIFO SYSTEM - when rebroacstsing ... for each packet, must pritotirs differnet, how to deinf how mnay to resend?
+
     private class BebDeliver implements Runnable {
-        private UrbProcess process;
+        private final UrbProcess process;
 
         public BebDeliver(UrbProcess process) {
             this.process = process;
@@ -233,18 +234,21 @@ public class UrbProcess {
         public void run() {
             try {
 
-                // continously receive packets
-                // find out who the sender is
-                // check if the message has already been logged
-                // add packet to receivedPackets
-                // log if havent been logged
-
                 byte[] buffer = new byte[BUFFER_SIZE];
                 while (!process.stop) {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     process.mySocket.receive(packet);
                     String receivedData = new String(packet.getData(), 0, packet.getLength());
                     List<TimeStampedPacket> receivedPackets = TimeStampedPacket.unparsePackets(receivedData);
+
+                    // FOR EACH PACKET RECEIVED:
+                    //      1. Add to acked -> Check if can URB Deliver
+                    //      2. If not in pending: a) Add to forwarderID to pending, b) Add to list of packets to be broadcasted
+                    // ADD packets from priority queu to the list of packets to be broadcasted
+                    // BROACAST the parsed packets to all processes
+
+                    //TODO clock value when receiving packet -> sending ...
+                    //if not in PENDING... what do we set clock value to... to current
 
                     for (TimeStampedPacket receivedPacket : receivedPackets) {
 
@@ -259,57 +263,48 @@ public class UrbProcess {
                         Main.print("Process " + myID + " Received packet with ID " + packetID + " forwarded by process "
                                 + forwarderID + " sent by process " + senderID);
 
-                        // ADD to acked -> CHECK if can URB DELIVER
-                        // TODO use urbDelovered for what, to avoid doing what twice?
-
+           
                         acked_perSender.get(senderID).get(packetID).add(forwarderID);
                         if (!urbDelivered.contains(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize))) {
                             if (acked_perSender.get(senderID).get(packetID).size() > (majority)) { // URB DELIVER
                                 urbDelivered.add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
-                                pending.remove(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
+                                pending.remove(receivedPacket);
                                 received_packets_toLog.get(senderID).add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));                                                                          
                             }
                         }
+                      
+                        // If never Brodcasted packet ourself, then add to list of packets to be broadcasted
+                         List<TimeStampedPacket> packetsToBroadcast = new ArrayList<>();
 
-                        // TODO ADD to pendinf and boracst atomic?
-                        // ADD TO forwarder to PENDING UPON RECEIVING PACKET
-
-                        // TODO window size must be modified for all packets sent & received
-                        // TODO FIFO mechanism: prioritise which we should send back first
-
-                        // TODO FIFO SYSTEM - when rebroacstsing ... for each packet, must pritotirse
-                        // differnet, how to deinf how mnay to resend?
-
-                        if (!pendingContains(senderID, packetID, packetSize)) {
-                            addToPending(senderID, packetID, packetSize);
-
-                            // tirgger beb broadcast
-                            for (int receiverID = 1; receiverID <= process.listOfHosts.size(); receiverID++) {
-
-                                if (receiverID == myID) {
-                                    continue;
-                                } // Skip self TODO (what to do when sending to SELF - add to ?)
-
-                                Host receiverHost = listOfHosts.get(receiverID - 1);
-                                String receiverIP = receiverHost.getIp();
-                                int receiverPort = receiverHost.getPort();
-
-                                TimeStampedPacket timeStampedPacket = new TimeStampedPacket(packetID, myID, senderID,
-                                        receivedPacket.getMessages());
-                                byte[] bufferb = timeStampedPacket.toString().getBytes();
-                                InetAddress address = InetAddress.getByName(receiverIP);
-                                DatagramPacket packetb = new DatagramPacket(bufferb, buffer.length, address,
-                                        receiverPort);
-                                process.mySocket.send(packetb);
-
-                            }
-                        }
+                         if (!pendingContains(receivedPacket)) {
+                             addToPending(receivedPacket);
+                             packetsToBroadcast.add(receivedPacket);
+                         }
                     }
 
-                }
-            } catch (
+                    // TODO GET PACKEST FROM PRIORITY QUEUE and add to list 
 
-            Exception e) {
+                    for (int receiverID = 1; receiverID <= process.listOfHosts.size(); receiverID++) {
+
+                        int clockvalue = process.logicClock.getAndIncrement();
+
+                        if (receiverID == myID) {
+                            continue;
+                        } 
+                        Host receiverHost = listOfHosts.get(receiverID - 1);
+                        String receiverIP = receiverHost.getIp();
+                        int receiverPort = receiverHost.getPort();
+
+                        TimeStampedPacket timeStampedPacket = new TimeStampedPacket(clockvalue, packetID, myID, senderID,receivedPacket.getMessages());
+                        byte[] bufferb = timeStampedPacket.toString().getBytes();
+                        InetAddress address = InetAddress.getByName(receiverIP);
+                        DatagramPacket packetb = new DatagramPacket(bufferb, buffer.length, address,
+                                receiverPort);
+                        process.mySocket.send(packetb);
+
+                        }
+                    }
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
@@ -326,7 +321,7 @@ public class UrbProcess {
     //     }
 
     private class Logger implements Runnable {
-        private UrbProcess process;
+        private final UrbProcess process;
 
         public Logger(UrbProcess process) {
             this.process = process;

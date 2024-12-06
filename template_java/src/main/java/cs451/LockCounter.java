@@ -1,7 +1,7 @@
 package cs451;
 
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 //TODO different lock for counter and window size?
 
@@ -18,19 +18,20 @@ public class LockCounter {
     public void unlock() {
         lock.unlock();
     }
-    //called when Ack is received
-    //window Size increased by 1
-    //COunter by 2 (1 for ack of packet and 1 for increent in window)
-    public void increment() {
+    //signalAll when counter will become > 0 
+    //increment max window size for every message received
+    //TODO - more conservative?
+    
+    public void increment(int value) {
         lock();
         try {
-            if (counter == 0 || counter == -1) {
-            counter += 2;
-            max_window_size += 1;
+            if ((counter <= 0 )&& (counter >= (-value) + 1)) {
+            counter += (2 * value);
+            max_window_size += value;
             condition.signalAll();
         } else {
-            counter += 2;
-            max_window_size += 1;
+            counter += (2 * value);
+            max_window_size += value;
         }      
         } finally {
             unlock();

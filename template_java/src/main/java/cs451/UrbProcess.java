@@ -1,6 +1,5 @@
 package cs451;
 
-import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -11,12 +10,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
-import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Logger;
+import cs451.PacketComparator;
 
 public class UrbProcess {
 
@@ -40,7 +38,7 @@ public class UrbProcess {
     private Set<Sender_Packet_Size_Tuple> urbDelivered = new HashSet<>();
 
     private Map<Integer, Map<Integer, Set<Integer>>> acked_perSender;
-    private HashMap<Integer, PriorityQueue<Sender_Packet_Size_Tuple>> received_packets_toLog = new HashMap<>();
+    private HashMap<Integer, PriorityQueue<Sender_Packet_Size_Tuple>> received_packets_toLog = new HashMap<>(); ///TODO
     private HashMap<Integer, Integer> highestLoggedID = new HashMap<>();
 
     private DatagramSocket mySocket;
@@ -50,7 +48,6 @@ public class UrbProcess {
     // TODO understand what these values should be, wait time can be function of
     // window Size/ unacked Size ?
     private final long FLUSH_INTERVAL = 1000;
-    private final long WAIT_TIME_RESEND_ACK = 1000;
     private final int BUFFER_SIZE = 4096;
 
     private final LockCounter lockCounter = new LockCounter();
@@ -84,7 +81,6 @@ public class UrbProcess {
         for (int hostID = 1; hostID <= numberOfHosts; hostID++) {
             highestLoggedID.put(hostID, 0);
         }
-
     }
 
     // TODO change MAIN
@@ -268,14 +264,10 @@ public class UrbProcess {
 
                         acked_perSender.get(senderID).get(packetID).add(forwarderID);
                         if (!urbDelivered.contains(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize))) {
-                            if (acked_perSender.get(senderID).get(packetID).size() > (majority)) {// URB DELIVER
+                            if (acked_perSender.get(senderID).get(packetID).size() > (majority)) { // URB DELIVER
                                 urbDelivered.add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
                                 pending.remove(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));
-                                received_packets_toLog.get(senderID)
-                                        .add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize)); // TODO
-                                                                                                            // defin
-                                                                                                            // priority
-                                                                                                            // in queue
+                                received_packets_toLog.get(senderID).add(new Sender_Packet_Size_Tuple(senderID, packetID, packetSize));                                                                          
                             }
                         }
 
@@ -344,9 +336,25 @@ public class UrbProcess {
         public void run() {
             while (!process.stop) {
                 try {
-                    Thread.sleep(FLUSH_INTERVAL); // Sleep for the specified interval
-                    // FinalLogger.writeLogs(process.outputFilePath, process.logs);
-                    // process.logs.clear();
+                    Thread.sleep(FLUSH_INTERVAL);
+                    for (int SenderID = 1; SenderID <= process.numberOfHosts; SenderID++) {
+                        PriorityQueue<Sender_Packet_Size_Tuple> queue = process.received_packets_toLog.get(SenderID);
+                        while (!queue.isEmpty()) {
+                            Sender_Packet_Size_Tuple tuple = queue.peek();
+                            int senderID = tuple.senderID;
+                            int packetID = tuple.packetID;
+                            int packetSize = tuple.packetSize;
+                            if (packetID == process.highestLoggedID.get(senderID) + 1) {
+                                for (int i = 1; i <= packetSize; i++) {
+                                    process.logs.add("d" + " " + senderID + " " + (((packetID - 1) * MAX_MESS_PER_PACK) + i));
+                                }
+                                queue.poll();
+                                process.highestLoggedID.put(senderID, packetID);
+                            } else {
+                                break;
+                            }
+                        }
+                    }
                     flushLogs();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
